@@ -1,6 +1,6 @@
 # BiliAssistant
 
-B站视频/音频转文字与摘要生成助手。
+B站视频/音频转文字与摘要生成助手。|开发中
 
 ## 功能特性
 
@@ -32,3 +32,4 @@ python main.py BV1xxxxxxxx
 ```bash
 python main.py --server
 ```
+
