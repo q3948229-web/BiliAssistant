@@ -1,0 +1,13 @@
+# .gitignore
+.env
+__pycache__/
+*.pyc
+*.mp3
+*.txt
+.DS_Store
+output/
+downloads/
+.vscode/
+!.gitignore
+!requirements.txt
+
