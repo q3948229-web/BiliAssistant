@@ -15,7 +15,7 @@ class Pipeline:
         self.asr = ASRClient()
         self.llm = LLMClient()
 
-    def run(self, source: str, skip_download=False):
+    def run(self, source: str, skip_download=False, preset_name="bilibili_summary", custom_prompt=None):
         local_file = source
         oss_key = None
         
@@ -51,8 +51,8 @@ class Pipeline:
             logger.info(f"Transcript saved to {transcript_path}")
 
             # 4. Summarize
-            logger.info("Step 4: Summarizing...")
-            summary = self.llm.generate_summary(transcript, mode="meeting_summary") # defaulting mode for now
+            logger.info(f"Step 4: Summarizing (Preset: {preset_name})...")
+            summary = self.llm.generate_summary(transcript, preset_name=preset_name, custom_prompt=custom_prompt)
             
             summary_path = os.path.join(output_dir, f"{base_name}_summary.txt")
             with open(summary_path, "w", encoding="utf-8") as f:

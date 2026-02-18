@@ -19,16 +19,25 @@ class LLMClient:
             logger.warning(f"Could not load presets: {e}")
             self.presets = {}
 
-    def generate_summary(self, content: str, mode: str = "bilibili_summary") -> str:
+    def generate_summary(self, content: str, preset_name: str = "meeting_summary", custom_prompt: str = None) -> str:
         url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
 
-        preset = self.presets.get(mode, self.presets.get("meeting_summary"))
-        system_prompt = preset["system"]
-        user_prompt = preset["user_template"].format(content=content)
+        # Determine prompt strategy
+        if custom_prompt and custom_prompt.strip():
+            system_prompt = custom_prompt
+            user_prompt = f"以下是转录内容：\n\n{content}"  # Default wrapper for custom prompt
+        else:
+            preset = self.presets.get(preset_name, self.presets.get("meeting_summary"))
+            if not preset: # Fallback if presets file is broken
+                system_prompt = "You are a helpful assistant."
+                user_prompt = content
+            else:
+                system_prompt = preset["system"]
+                user_prompt = preset["user_template"].format(content=content)
 
         payload = {
             "model": self.model,
@@ -38,7 +47,7 @@ class LLMClient:
             ]
         }
         
-        logger.info(f"Generating summary with model: {self.model}")
+        logger.info(f"Generating summary with model: {self.model} | Preset: {preset_name} | Custom: {bool(custom_prompt)}")
         resp = requests.post(url, headers=headers, json=payload)
         
         if resp.status_code == 200:
