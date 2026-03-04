@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bilibili AI Summary Assistant - MP3_TO_TXT
+// @name         Bilibili AI Assistant
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Call local MP3_TO_TXT service to summarize Bilibili videos
+// @version      1.1
+// @description  Call local BiliAssistant service to summarize Bilibili videos
 // @author       You
 // @match        https://www.bilibili.com/video/BV*
 // @grant        GM_xmlhttpRequest

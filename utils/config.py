@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "MP3_TO_TXT_Service"
+    APP_NAME: str = "BiliAssistant_Service"
     
     # DashScope
     DASHSCOPE_API_KEY: str

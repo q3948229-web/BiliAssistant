@@ -20,7 +20,7 @@ from utils.logger import get_logger
 
 # 初始化 APP
 app = FastAPI(
-    title="MP3 to TXT Service",
+    title="BiliAssistant Service",
     description="一个将视频/音频转换为文本并生成摘要的 API 服务",
     version="1.0.0"
 )
@@ -110,19 +110,41 @@ def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
-def run_cli(source):
+def run_cli(source, preset_name="bilibili_summary"):
     """
     命令行模式运行入口
     """
-    try:
-        logger.info(f"开始 CLI 模式处理: {source}")
-        pipeline.run(source, preset_name="bilibili_summary")
-    except Exception as e:
-        logger.error(f"CLI Error: {e}")
+    if os.path.isdir(source):
+        # 目录模式: 批量处理 MP4 文件
+        logger.info(f"检测到目录输入: {source}")
+        files = [f for f in os.listdir(source) if f.lower().endswith(".mp4")]
+        
+        if not files:
+            logger.warning(f"在该目录下未找到 .mp4 文件: {source}")
+            return
+            
+        logger.info(f"找到 {len(files)} 个 MP4 文件准备处理")
+        
+        for i, filename in enumerate(files, 1):
+            file_path = os.path.join(source, filename)
+            logger.info(f"[{i}/{len(files)}] 正在处理文件: {filename}")
+            try:
+                pipeline.run(file_path, preset_name=preset_name)
+            except Exception as e:
+                logger.error(f"处理文件失败 {filename}: {e}")
+                # 继续处理下一个文件
+    else:
+        # 单任务模式
+        try:
+            logger.info(f"开始 CLI 模式处理: {source} | Preset: {preset_name}")
+            pipeline.run(source, preset_name=preset_name)
+        except Exception as e:
+            logger.error(f"CLI Error: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bilibili/MP3 转文字摘要工具")
     parser.add_argument("source", nargs="?", help="输入源 (文件路径 / URL / B站BV号)")
+    parser.add_argument("--preset", default="bilibili_summary", help="选择摘要提示词预设 (默认: bilibili_summary)")
     parser.add_argument("--server", action="store_true", help="启动 Web API 服务器模式")
     
     args = parser.parse_args()
@@ -131,7 +153,7 @@ if __name__ == "__main__":
         print("正在启动 Web 服务... 访问 http://localhost:8000/docs 查看文档")
         uvicorn.run(app, host="0.0.0.0", port=8000)
     elif args.source:
-        run_cli(args.source)
+        run_cli(args.source, args.preset)
     else:
         # 如果没有参数，打印帮助信息
         parser.print_help()
