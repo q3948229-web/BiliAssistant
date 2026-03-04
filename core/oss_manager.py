@@ -24,7 +24,7 @@ class OSSManager:
         try:
             file_name = os.path.basename(file_path)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            object_key = f"mp3_to_txt_temp/{timestamp}_{file_name}"
+            object_key = f"bili_assistant_temp/{timestamp}_{file_name}"
             
             logger.info(f"Uploading to OSS: {object_key}")
             
