@@ -1,5 +1,7 @@
 # .gitignore
 .env
+.venv/
+.opencode-venv/
 __pycache__/
 *.pyc
 *.mp3

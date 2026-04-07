@@ -1,82 +1,167 @@
 # BiliAssistant
 
-这是一个基于阿里云 DashScope 的视频/音频转文字与智能摘要生成助手。它能够自动处理本地文件或 B站视频，生成精简的总结、会议纪要、思维导图甚至是全篇翻译。
+基于阿里云 DashScope 的音视频转录与内容整理工具，支持本地文件、Bilibili 视频和普通 URL 输入，输出转录文本与结构化总结。
 
-## 功能特性
+## 项目能力
 
-- **多源支持**: 支持本地音视频文件、B站 AV/BV 号、在线 URL。
-- **自动转录集成**: 使用阿里云 DashScope ASR 模型 (qwen3-asr-flash-filetrans)，实现高精度语音转文字。
-- **AI 智能摘要**: 集成阿里云 Qwen-Long 模型，基于预设提示词生成结构化内容。
-- **流程自动化**: 自动下载 -> 上传 OSS -> 转录 -> 摘要 -> 清理 OSS。
-- **Web 服务**: 内置 FastAPI 服务，支持 HTTP 调用及任务队列。
+- 音视频转文字：调用 DashScope ASR 模型完成转录。
+- 内容总结：调用大模型按预设提示词生成摘要、翻译、思维导图等结果。
+- 多输入源：支持本地文件、B 站 BV 号、视频 URL。
+- 自动处理链路：下载、提取音频、上传 OSS、转录、总结、清理临时资源。
+- 双入口：支持命令行模式和 FastAPI Web 服务模式。
 
-## 安装与环境配置
+## 项目结构
 
-本项目使用 [uv](https://github.com/astral-sh/uv) 进行高效的 Python 环境与依赖管理。
+```text
+.
+|- main.py                 # CLI 与 FastAPI 入口
+|- core/
+|  |- pipeline.py         # 主处理流程
+|  |- downloader.py       # 下载视频/音频
+|  |- asr_client.py       # DashScope ASR 调用
+|  |- llm_client.py       # 摘要与提示词处理
+|  `- oss_manager.py      # OSS 上传与清理
+|- utils/
+|  |- config.py           # 环境变量配置
+|  `- logger.py           # 日志
+`- prompts/presets.json   # 预设提示词
+```
 
-1. **安装依赖**:
-   如果尚未安装 `uv`，请先安装。然后运行：
-   ```bash
-   uv sync
-   ```
+## 环境要求
 
-2. **配置环境变量**:
-   复制 `config.example.py` 为 `.env` 文件，并填入您的阿里云 API Key 和 OSS 配置信息。
-   *(注: 阿里云 OSS 用于暂存音频文件以供 ASR 服务读取)*
+- Python `3.10+`
+- Windows 环境
+- `uv` 用于环境和依赖管理
+- 阿里云 DashScope API Key
+- 阿里云 OSS 配置
 
-## 使用方法 (CLI)
+## 安装
 
-您可以通过命令行直接处理单个任务。
-
-### 基本用法
+1. 安装 `uv`。
+2. 在项目根目录执行：
 
 ```bash
-# 使用 uv 运行 (推荐)
-uv run main.py <source> [options]
+uv sync
 ```
+
+3. 之后统一使用 `uv run` 执行程序，不再维护 Conda、WSL 虚拟环境或仓库内其他 Python 环境目录。
+
+## 配置
+
+程序通过 `.env` 读取配置，字段定义见 `utils/config.py`。
+
+可以参考 `config.example.py`，在项目根目录创建 `.env`，至少包含以下变量：
+
+```env
+DASHSCOPE_API_KEY=your_api_key_here
+DASHSCOPE_MODEL=qwen3-asr-flash-filetrans
+DASHSCOPE_SUMMARY_MODEL=qwen-long
+OSS_ACCESS_KEY_ID=your_oss_id
+OSS_ACCESS_KEY_SECRET=your_oss_secret
+OSS_ENDPOINT=https://oss-cn-shanghai.aliyuncs.com
+OSS_BUCKET_NAME=your_bucket_name
+```
+
+注意：`config.example.py` 只是字段示例，实际运行读取的是 `.env`。
+
+## CLI 用法
+
+### 基本命令
+
+```bash
+uv run main.py <source> [--preset <preset_name>]
+```
+
+`source` 支持：
+
+- 本地音视频文件路径
+- Bilibili `BV` 号
+- 普通视频 URL
+- 本地目录路径：会批量处理目录中的 `.mp4` 文件
 
 ### 示例
 
-1. **处理 B站视频 (默认生成视频总结)**:
-   ```bash
-   uv run main.py BV1xxxxxxxx
-   ```
+处理 B 站视频：
 
-2. **处理本地文件**:
-   需提供绝对路径或相对路径。
-   ```bash
-   uv run main.py "C:\Downloads\meeting_recording.mp3"
-   ```
+```bash
+uv run main.py BV1xxxxxxxx
+```
 
-3. **使用不同的提示词预设**:
-   默认预设为 `bilibili_summary`。您可以通过 `--preset` 参数指定其他模式。
-   
-   **会议纪要模式**:
-   ```bash
-   uv run main.py "path/to/meeting.mp4" --preset meeting_summary
-   ```
+处理本地文件：
 
-   **全文翻译模式**:
-   ```bash
-   uv run main.py BV1xxxxxxxx --preset translation
-   ```
+```bash
+uv run main.py "C:\Downloads\meeting_recording.mp3"
+```
 
-### 可用预设 (Presets)
+批量处理目录中的 MP4：
 
-项目内置了以下几种提示词预设 (详见 `prompts/presets.json`):
+```bash
+uv run main.py "C:\videos"
+```
 
-- `bilibili_summary`: **(默认)** 适用于 B站视频，生成一句话概括、精彩观点和幽默总结。
-- `meeting_summary`: 适用于会议录音，提取核心议题、详细摘要、结论与待办事项 (Action Items)。
-- `translation`: 全文翻译 (中英互译)，保留时间戳。
-- `mindmap`: 生成 Markdown 格式的思维导图节点。
+指定预设：
 
-## Web 服务
+```bash
+uv run main.py BV1xxxxxxxx --preset bilibili_summary
+uv run main.py "C:\videos\meeting.mp4" --preset meeting_summary
+uv run main.py "C:\videos\lecture.mp4" --preset translation
+```
 
-启动内置的 API 服务器，提供 RESTful 接口。
+## 可用预设
+
+当前 `prompts/presets.json` 中包含：
+
+- `bilibili_summary`：B 站视频总结
+- `meeting_summary`：会议纪要
+- `translation`：全文翻译
+- `mindmap`：Markdown 思维导图
+- `summary`：偏完整的长摘要
+- `lab_experiment`：实验报告视频总结
+
+## Web API
+
+启动服务：
 
 ```bash
 uv run main.py --server
 ```
 
-启动后可访问文档: http://localhost:8000/docs
+启动后可访问：
 
+- Swagger 文档：`http://localhost:8000/docs`
+- OpenAPI 描述：`http://localhost:8000/openapi.json`
+
+主要接口：
+
+- `GET /presets`：获取可用预设
+- `POST /process`：提交异步处理任务
+- `GET /status/{task_id}`：查询任务状态
+
+`POST /process` 请求体示例：
+
+```json
+{
+  "source": "BV1xxxxxxxx",
+  "skip_download": false,
+  "preset_name": "bilibili_summary",
+  "custom_prompt": null
+}
+```
+
+## 输出结果
+
+默认输出目录：
+
+- `downloads/`：下载的原始文件或中间音频
+- `output/`：转录文本与总结结果
+
+每次处理通常会生成：
+
+- `output/<name>.txt`：转录文本
+- `output/<name>_summary.txt`：模型生成结果
+
+## 当前已知注意事项
+
+- `README` 现已按 `.env` 方式说明配置，但仓库里仍保留了 `config.example.py`，名称容易让人误以为程序直接读取 Python 配置。
+- 当前仓库按 `Windows + uv` 使用方式整理，不再保留 Conda 环境文件。
+- 本地虚拟环境目录如 `.venv/`、`.opencode-venv/` 已列入忽略列表，不应提交到 git。
