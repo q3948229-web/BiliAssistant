@@ -1,8 +1,9 @@
 import os
 import subprocess
+import shutil
+import uuid
 import imageio_ffmpeg
 from .downloader import BilibiliDownloader
-from .oss_manager import OSSManager
 from .asr_client import ASRClient
 from .llm_client import LLMClient
 from utils.config import settings
@@ -13,7 +14,6 @@ logger = get_logger("Pipeline")
 class Pipeline:
     def __init__(self):
         self.downloader = BilibiliDownloader(settings.DOWNLOAD_DIR)
-        self.oss = OSSManager()
         self.asr = ASRClient()
         self.llm = LLMClient()
 
@@ -54,7 +54,7 @@ class Pipeline:
 
     def run(self, source: str, skip_download=False, preset_name="bilibili_summary", custom_prompt=None):
         local_file = source
-        oss_key = None
+        served_file = None
         temp_audio_file = None
         
         try:
@@ -72,14 +72,20 @@ class Pipeline:
             else:
                 raise Exception("Invalid source")
 
-            # 2. Upload to OSS
-            logger.info("Step 2: Uploading to OSS...")
-            oss_url, oss_key = self.oss.upload_file(local_file)
-
+            # 2. Make file accessible via public URL
+            logger.info("Step 2: Preparing file for ASR...")
+            file_id = str(uuid.uuid4())
+            ext = os.path.splitext(local_file)[1] or ".mp3"
+            serve_name = f"{file_id}{ext}"
+            os.makedirs(settings.PUBLIC_DIR, exist_ok=True)
+            serve_path = os.path.join(settings.PUBLIC_DIR, serve_name)
+            shutil.copy2(local_file, serve_path)
+            served_file = serve_path
+            file_url = f"{settings.PUBLIC_HOST}/files/{serve_name}"
 
             # 3. Transcribe
             logger.info("Step 3: Transcribing...")
-            task_id = self.asr.submit_task(oss_url)
+            task_id = self.asr.submit_task(file_url)
             logger.info(f"Task ID: {task_id}")
             transcript = self.asr.poll_result(task_id)
             
@@ -117,10 +123,14 @@ class Pipeline:
             raise e
             
         finally:
-            # Cleanup OSS
-            if oss_key:
-                self.oss.delete_file(oss_key)
-            
+            # Cleanup served file
+            if served_file and os.path.exists(served_file):
+                try:
+                    os.remove(served_file)
+                    logger.info(f"Cleaned up served file: {served_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup served file: {e}")
+
             # Cleanup temp file
             if temp_audio_file and os.path.exists(temp_audio_file):
                 try:

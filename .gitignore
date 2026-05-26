@@ -9,6 +9,7 @@ __pycache__/
 .DS_Store
 output/
 downloads/
+public/
 .vscode/
 !.gitignore
 !requirements.txt
