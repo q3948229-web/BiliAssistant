@@ -4,6 +4,7 @@ import os
 import argparse
 import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,6 +110,14 @@ def get_task_status(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+@app.get("/files/{filename}", summary="下载临时音频文件（供 ASR API 拉取）")
+async def serve_file(filename: str):
+    from utils.config import settings
+    file_path = os.path.join(settings.PUBLIC_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path, media_type="audio/mpeg")
 
 def run_cli(source, preset_name="bilibili_summary"):
     """

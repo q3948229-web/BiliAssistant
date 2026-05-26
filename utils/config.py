@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
@@ -10,18 +10,14 @@ class Settings(BaseSettings):
     DASHSCOPE_MODEL: str = "qwen3-asr-flash-filetrans"
     DASHSCOPE_SUMMARY_MODEL: str = "qwen-long"
     
-    # OSS
-    OSS_ACCESS_KEY_ID: str
-    OSS_ACCESS_KEY_SECRET: str
-    OSS_ENDPOINT: str
-    OSS_BUCKET_NAME: str
+    # Server (replaces OSS — serve files directly for ASR)
+    PUBLIC_HOST: str = "http://localhost:8000"
+    PUBLIC_DIR: str = "public"
     
     # Paths
     DOWNLOAD_DIR: str = "downloads"
     OUTPUT_DIR: str = "output"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = 'utf-8'
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
