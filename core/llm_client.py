@@ -8,8 +8,9 @@ logger = get_logger("LLMClient")
 
 class LLMClient:
     def __init__(self):
-        self.api_key = settings.DASHSCOPE_API_KEY
-        self.model = settings.DASHSCOPE_SUMMARY_MODEL
+        self.api_key = settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY
+        self.base_url = settings.LLM_BASE_URL
+        self.model = settings.LLM_MODEL
         # Load presets
         try:
             presets_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "presets.json")
@@ -20,7 +21,9 @@ class LLMClient:
             self.presets = {}
 
     def generate_summary(self, content: str, preset_name: str = "meeting_summary", custom_prompt: str = None) -> str:
-        url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        url = self.base_url.rstrip("/")
+        if not url.endswith("/chat/completions"):
+            url += "/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -48,11 +51,14 @@ class LLMClient:
         }
         
         logger.info(f"Generating summary with model: {self.model} | Preset: {preset_name} | Custom: {bool(custom_prompt)}")
-        resp = requests.post(url, headers=headers, json=payload)
-        
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+
         if resp.status_code == 200:
             result = resp.json()
             if "choices" in result:
                 return result["choices"][0]["message"]["content"]
-        
-        raise Exception(f"LLM Error: {resp.text}")
+            logger.error(f"LLM response missing 'choices': {resp.text[:500]}")
+            raise Exception(f"LLM Error: response missing 'choices' field")
+
+        logger.error(f"LLM API error {resp.status_code}: {resp.text[:500]}")
+        raise Exception(f"LLM Error ({resp.status_code}): {resp.text[:200]}")

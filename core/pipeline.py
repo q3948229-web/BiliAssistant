@@ -1,6 +1,8 @@
 import os
+import subprocess
 import shutil
 import uuid
+import imageio_ffmpeg
 from .downloader import BilibiliDownloader
 from .asr_client import ASRClient
 from .llm_client import LLMClient
@@ -29,16 +31,24 @@ class Pipeline:
             else:
                 raise Exception("Invalid source")
 
-            # 2. Make file accessible via public URL
-            logger.info("Step 2: Preparing file for ASR...")
+            # 2. Convert to mp3 for ASR compatibility, then serve via URL
+            logger.info("Step 2: Converting audio for ASR...")
             file_id = str(uuid.uuid4())
-            ext = os.path.splitext(local_file)[1] or ".mp3"
-            serve_name = f"{file_id}{ext}"
             os.makedirs(settings.PUBLIC_DIR, exist_ok=True)
-            serve_path = os.path.join(settings.PUBLIC_DIR, serve_name)
-            shutil.copy2(local_file, serve_path)
+            serve_path = os.path.join(settings.PUBLIC_DIR, f"{file_id}.mp3")
+
+            ext = os.path.splitext(local_file)[1].lower()
+            if ext == ".mp3":
+                shutil.copy2(local_file, serve_path)
+            else:
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                subprocess.run(
+                    [ffmpeg_exe, '-i', local_file, '-acodec', 'libmp3lame', '-q:a', '4', serve_path, '-y'],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+
             served_file = serve_path
-            file_url = f"{settings.PUBLIC_HOST}/files/{serve_name}"
+            file_url = f"{settings.PUBLIC_HOST}/files/{file_id}.mp3"
 
             # 3. Transcribe
             logger.info("Step 3: Transcribing...")
