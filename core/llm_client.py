@@ -8,8 +8,9 @@ logger = get_logger("LLMClient")
 
 class LLMClient:
     def __init__(self):
-        self.api_key = settings.DASHSCOPE_API_KEY
-        self.model = settings.DASHSCOPE_SUMMARY_MODEL
+        self.api_key = settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY
+        self.base_url = settings.LLM_BASE_URL
+        self.model = settings.LLM_MODEL
         # Load presets
         try:
             presets_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "presets.json")
@@ -20,7 +21,7 @@ class LLMClient:
             self.presets = {}
 
     def generate_summary(self, content: str, preset_name: str = "meeting_summary", custom_prompt: str = None) -> str:
-        url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        url = self.base_url
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
