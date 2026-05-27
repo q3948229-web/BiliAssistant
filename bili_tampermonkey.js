@@ -8,12 +8,13 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
 // @connect      localhost
+// @connect      biliassistant.onrender.com
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    const API_URL = "http://localhost:8000";
+    const API_URL = "https://biliassistant.onrender.com";
 
     function getBvId() {
         // ... (existing code)

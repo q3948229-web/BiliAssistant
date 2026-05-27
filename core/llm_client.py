@@ -50,10 +50,13 @@ class LLMClient:
         
         logger.info(f"Generating summary with model: {self.model} | Preset: {preset_name} | Custom: {bool(custom_prompt)}")
         resp = requests.post(url, headers=headers, json=payload)
-        
+
         if resp.status_code == 200:
             result = resp.json()
             if "choices" in result:
                 return result["choices"][0]["message"]["content"]
-        
-        raise Exception(f"LLM Error: {resp.text}")
+            logger.error(f"LLM response missing 'choices': {resp.text[:500]}")
+            raise Exception(f"LLM Error: response missing 'choices' field")
+
+        logger.error(f"LLM API error {resp.status_code}: {resp.text[:500]}")
+        raise Exception(f"LLM Error ({resp.status_code}): {resp.text[:200]}")
