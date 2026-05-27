@@ -1,6 +1,7 @@
 import uuid
 import json
 import os
+import mimetypes
 import argparse
 import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -117,7 +118,8 @@ async def serve_file(filename: str):
     file_path = os.path.join(settings.PUBLIC_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path, media_type="audio/mpeg")
+    media_type, _ = mimetypes.guess_type(filename)
+    return FileResponse(file_path, media_type=media_type or "audio/mpeg")
 
 def run_cli(source, preset_name="bilibili_summary"):
     """

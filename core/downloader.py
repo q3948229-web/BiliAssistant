@@ -34,11 +34,6 @@ class BilibiliDownloader:
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(self.download_dir, '%(title)s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'ffmpeg_location': self.ffmpeg_exe,
         }
@@ -47,9 +42,8 @@ class BilibiliDownloader:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url_or_bv, download=True)
                 filename = ydl.prepare_filename(info)
-                final_filename = os.path.splitext(filename)[0] + ".mp3"
-                logger.info(f"Download complete: {final_filename}")
-                return final_filename
+                logger.info(f"Download complete: {filename}")
+                return filename
         except Exception as e:
             logger.error(f"Download failed: {e}")
             raise e
