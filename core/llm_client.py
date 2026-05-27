@@ -21,7 +21,9 @@ class LLMClient:
             self.presets = {}
 
     def generate_summary(self, content: str, preset_name: str = "meeting_summary", custom_prompt: str = None) -> str:
-        url = self.base_url
+        url = self.base_url.rstrip("/")
+        if not url.endswith("/chat/completions"):
+            url += "/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -49,7 +51,7 @@ class LLMClient:
         }
         
         logger.info(f"Generating summary with model: {self.model} | Preset: {preset_name} | Custom: {bool(custom_prompt)}")
-        resp = requests.post(url, headers=headers, json=payload)
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
 
         if resp.status_code == 200:
             result = resp.json()
