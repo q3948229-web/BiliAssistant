@@ -4,8 +4,8 @@ import os
 import mimetypes
 import argparse
 import uvicorn
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
 from fastapi.middleware.cors import CORSMiddleware
@@ -120,6 +120,186 @@ async def serve_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     media_type, _ = mimetypes.guess_type(filename)
     return FileResponse(file_path, media_type=media_type or "audio/mpeg")
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index():
+    return """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BiliAssistant - B站视频摘要</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f7; color: #1d1d1f; min-height: 100vh; }
+.container { max-width: 640px; margin: 0 auto; padding: 32px 20px; }
+h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.subtitle { font-size: 14px; color: #86868b; margin-bottom: 24px; }
+.card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+label { font-size: 14px; font-weight: 500; display: block; margin-bottom: 6px; color: #1d1d1f; }
+input, select, textarea { width: 100%; padding: 10px 14px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 15px; outline: none; transition: border-color .2s; background: #fff; font-family: inherit; }
+input:focus, select:focus, textarea:focus { border-color: #007aff; }
+.form-group { margin-bottom: 14px; }
+.btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 16px; font-weight: 500; cursor: pointer; transition: opacity .2s; background: #007aff; color: #fff; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:hover:not(:disabled) { opacity: .85; }
+.status { font-size: 14px; padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; display: none; align-items: center; gap: 8px; }
+.status.show { display: flex; }
+.status.info { background: #e8f0fe; color: #1967d2; }
+.status.done { background: #e6f4ea; color: #137333; }
+.status.err { background: #fce8e6; color: #c5221f; }
+.spinner { width: 16px; height: 16px; border: 2px solid #1967d2; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.result-box { display: none; }
+.result-box.show { display: block; }
+.result-box textarea { width: 100%; min-height: 260px; padding: 14px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 14px; line-height: 1.6; resize: vertical; background: #fafafa; }
+.result-actions { display: flex; gap: 8px; margin-top: 10px; }
+.result-actions button { padding: 8px 16px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 13px; cursor: pointer; background: #fff; transition: background .2s; }
+.result-actions button:hover { background: #f5f5f7; }
+.result-actions button.primary { background: #007aff; color: #fff; border-color: #007aff; }
+.result-actions button.primary:hover { opacity: .85; }
+a { color: #007aff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 BiliAssistant</h1>
+  <p class="subtitle">输入 B站视频链接或 BV 号，AI 自动生成摘要</p>
+
+  <div class="card">
+    <div class="form-group">
+      <label>视频链接或 BV 号</label>
+      <input id="input-source" placeholder="例如: BV1xx411c7mD 或 https://www.bilibili.com/video/BV1xx411c7mD">
+    </div>
+
+    <div class="form-group">
+      <label>总结模式</label>
+      <select id="input-preset"></select>
+    </div>
+
+    <div class="form-group">
+      <label>自定义提示词（可选）</label>
+      <textarea id="input-custom" placeholder="留空则使用上方选择的模式默认提示词" rows="2"></textarea>
+    </div>
+
+    <button class="btn" id="btn-submit" onclick="startTask()">🚀 生成摘要</button>
+  </div>
+
+  <div class="status" id="status-msg">
+    <div class="spinner"></div>
+    <span id="status-text"></span>
+  </div>
+
+  <div class="card result-box" id="result-box">
+    <label>📝 生成结果</label>
+    <textarea id="result-text" readonly></textarea>
+    <div class="result-actions">
+      <button class="primary" onclick="copyResult()">📋 复制</button>
+      <button onclick="clearResult()">🗑️ 清空</button>
+    </div>
+  </div>
+
+  <p style="text-align:center;font-size:13px;color:#86868b;margin-top:24px">
+    <a href="/docs" target="_blank">API 文档</a>
+  </p>
+</div>
+
+<script>
+async function loadPresets() {
+  try {
+    const r = await fetch('/presets');
+    const list = await r.json();
+    const sel = document.getElementById('input-preset');
+    list.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.key; opt.textContent = p.label;
+      sel.appendChild(opt);
+    });
+  } catch { /* fallback handled below */ }
+}
+loadPresets();
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status-msg');
+  const txt = document.getElementById('status-text');
+  el.className = 'status show ' + (type || 'info');
+  txt.textContent = msg;
+}
+
+function showResult(text) {
+  document.getElementById('result-text').value = text;
+  document.getElementById('result-box').classList.add('show');
+}
+
+async function startTask() {
+  const source = document.getElementById('input-source').value.trim();
+  if (!source) { setStatus('请先输入视频链接或 BV 号', 'err'); return; }
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  document.getElementById('result-box').classList.remove('show');
+
+  setStatus('提交任务中...', 'info');
+
+  try {
+    const r = await fetch('/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source,
+        preset_name: document.getElementById('input-preset').value,
+        custom_prompt: document.getElementById('input-custom').value.trim() || null
+      })
+    });
+    const data = await r.json();
+    if (!data.task_id) throw new Error('提交失败');
+
+    // Poll
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch('/status/' + data.task_id);
+        const task = await res.json();
+        if (task.status === 'succeeded') {
+          clearInterval(poll);
+          btn.disabled = false;
+          setStatus('✅ 处理完成！', 'done');
+          if (task.result?.summary) showResult(task.result.summary);
+        } else if (task.status === 'failed') {
+          clearInterval(poll);
+          btn.disabled = false;
+          setStatus('❌ 失败: ' + (task.error || '未知错误'), 'err');
+        } else {
+          const dots = '.'.repeat((attempts % 3) + 1);
+          setStatus('⏳ ' + (task.status === 'queued' ? '排队中' : '处理中') + dots, 'info');
+        }
+      } catch { /* retry */ }
+    }, 1500);
+  } catch (e) {
+    btn.disabled = false;
+    setStatus('❌ 连接失败，请检查服务是否正常运行', 'err');
+  }
+}
+
+function copyResult() {
+  const ta = document.getElementById('result-text');
+  ta.select();
+  navigator.clipboard?.writeText(ta.value);
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '✅ 已复制';
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+
+function clearResult() {
+  document.getElementById('result-text').value = '';
+  document.getElementById('result-box').classList.remove('show');
+}
+</script>
+</body>
+</html>"""
 
 def run_cli(source, preset_name="bilibili_summary"):
     """
