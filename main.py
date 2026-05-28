@@ -1,6 +1,7 @@
 import uuid
 import json
 import os
+import time
 import mimetypes
 import argparse
 import uvicorn
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.pipeline import Pipeline
 from utils.logger import get_logger
+import utils.access_logger as access_logger
 
 """
 主程序入口 (Entry Point)
@@ -65,26 +67,50 @@ class ProcessRequest(BaseModel):
     preset_name: str = "bilibili_summary" # 预设提示词名称
     custom_prompt: Optional[str] = None # 自定义 System Prompt
 
-def background_process_task(task_id: str, request: ProcessRequest):
+def background_process_task(task_id: str, request: ProcessRequest, client_ip: str = ""):
+    start = time.time()
     logger.info(f"后台任务开始: {task_id}")
     try:
         tasks_db[task_id]["status"] = "processing"
-        
-        # 调用 Pipeline
+
         result = pipeline.run(
-            request.source, 
-            request.skip_download, 
+            request.source,
+            request.skip_download,
             preset_name=request.preset_name,
-            custom_prompt=request.custom_prompt
+            custom_prompt=request.custom_prompt,
+            task_id=task_id
         )
-        
+
+        elapsed = int(time.time() - start)
         tasks_db[task_id]["status"] = "succeeded"
         tasks_db[task_id]["result"] = result
-        logger.info(f"后台任务完成: {task_id}")
+        logger.info(f"后台任务完成: {task_id} ({elapsed}s)")
+
+        access_logger.log(
+            type="complete",
+            task_id=task_id,
+            source=request.source,
+            preset=request.preset_name,
+            client_ip=client_ip,
+            status="succeeded",
+            duration_s=elapsed
+        )
     except Exception as e:
+        elapsed = int(time.time() - start)
         logger.error(f"后台任务失败 {task_id}: {e}")
         tasks_db[task_id]["status"] = "failed"
         tasks_db[task_id]["error"] = str(e)
+
+        access_logger.log(
+            type="complete",
+            task_id=task_id,
+            source=request.source,
+            preset=request.preset_name,
+            client_ip=client_ip,
+            status="failed",
+            duration_s=elapsed,
+            error=str(e)
+        )
 
 @app.get("/presets", summary="获取可用的提示词预设")
 def get_presets():
@@ -92,17 +118,22 @@ def get_presets():
     return [{"key": k, "label": v.get("label", k)} for k, v in presets.items()]
 
 @app.post("/process", summary="提交音频处理任务 (异步)")
-def process_audio(request: ProcessRequest, background_tasks: BackgroundTasks):
-    """
-    提交任务并立即返回 task_id
-    """
+def process_audio(request: ProcessRequest, background_tasks: BackgroundTasks, req: Request):
     task_id = str(uuid.uuid4())
+    client_ip = req.client.host if req.client else "unknown"
     tasks_db[task_id] = {
         "status": "queued",
         "result": None,
         "error": None
     }
-    background_tasks.add_task(background_process_task, task_id, request)
+    access_logger.log(
+        type="submit",
+        task_id=task_id,
+        source=request.source,
+        preset=request.preset_name,
+        client_ip=client_ip
+    )
+    background_tasks.add_task(background_process_task, task_id, request, client_ip)
     return {"task_id": task_id, "message": "Task queued"}
 
 @app.get("/status/{task_id}", summary="查询任务状态")
@@ -110,7 +141,8 @@ def get_task_status(task_id: str):
     task = tasks_db.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    progress = Pipeline.task_progress.get(task_id, "")
+    return {**task, "progress": progress}
 
 @app.get("/files/{filename}", summary="下载临时音频文件（供 ASR API 拉取）")
 async def serve_file(filename: str):
@@ -150,6 +182,8 @@ input:focus, select:focus, textarea:focus { border-color: #007aff; }
 .status.err { background: #fce8e6; color: #c5221f; }
 .spinner { width: 16px; height: 16px; border: 2px solid #1967d2; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.warning { display: none; font-size: 13px; padding: 10px 16px; border-radius: 10px; margin-bottom: 16px; background: #fef7e0; color: #8d6e00; align-items: center; gap: 8px; }
+.warning.show { display: flex; }
 .result-box { display: none; }
 .result-box.show { display: block; }
 .result-box textarea { width: 100%; min-height: 260px; padding: 14px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 14px; line-height: 1.6; resize: vertical; background: #fafafa; }
@@ -160,6 +194,7 @@ input:focus, select:focus, textarea:focus { border-color: #007aff; }
 .result-actions button.primary:hover { opacity: .85; }
 a { color: #007aff; text-decoration: none; }
 a:hover { text-decoration: underline; }
+.elapsed { font-size: 12px; color: #86868b; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -185,6 +220,8 @@ a:hover { text-decoration: underline; }
 
     <button class="btn" id="btn-submit" onclick="startTask()">🚀 生成摘要</button>
   </div>
+
+  <div class="warning" id="warning-banner">⚠️ 处理中请勿刷新页面或关闭标签页</div>
 
   <div class="status" id="status-msg">
     <div class="spinner"></div>
@@ -227,6 +264,10 @@ function setStatus(msg, type) {
   txt.textContent = msg;
 }
 
+function showWarning(show) {
+  document.getElementById('warning-banner').classList.toggle('show', show);
+}
+
 function showResult(text) {
   document.getElementById('result-text').value = text;
   document.getElementById('result-box').classList.add('show');
@@ -239,6 +280,7 @@ async function startTask() {
   const btn = document.getElementById('btn-submit');
   btn.disabled = true;
   document.getElementById('result-box').classList.remove('show');
+  showWarning(true);
 
   setStatus('提交任务中...', 'info');
 
@@ -255,30 +297,35 @@ async function startTask() {
     const data = await r.json();
     if (!data.task_id) throw new Error('提交失败');
 
-    // Poll
-    let attempts = 0;
+    let prevProgress = '';
+
     const poll = setInterval(async () => {
-      attempts++;
       try {
         const res = await fetch('/status/' + data.task_id);
         const task = await res.json();
+
+        if (task.progress && task.progress !== prevProgress) {
+          prevProgress = task.progress;
+          setStatus('⏳ ' + task.progress, 'info');
+        }
+
         if (task.status === 'succeeded') {
           clearInterval(poll);
           btn.disabled = false;
+          showWarning(false);
           setStatus('✅ 处理完成！', 'done');
           if (task.result?.summary) showResult(task.result.summary);
         } else if (task.status === 'failed') {
           clearInterval(poll);
           btn.disabled = false;
-          setStatus('❌ 失败: ' + (task.error || '未知错误'), 'err');
-        } else {
-          const dots = '.'.repeat((attempts % 3) + 1);
-          setStatus('⏳ ' + (task.status === 'queued' ? '排队中' : '处理中') + dots, 'info');
+          showWarning(false);
+          setStatus('❌ ' + (task.error || '处理失败'), 'err');
         }
-      } catch { /* retry */ }
-    }, 1500);
+      } catch { /* retry on network glitch */ }
+    }, 1000);
   } catch (e) {
     btn.disabled = false;
+    showWarning(false);
     setStatus('❌ 连接失败，请检查服务是否正常运行', 'err');
   }
 }
