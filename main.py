@@ -42,9 +42,10 @@ app.add_middleware(
 pipeline = Pipeline()
 logger = get_logger("Main")
 
-# 简单的内存任务存储
-# 结构: { task_id: { "status": "processing" | "succeeded" | "failed", "result": {...}, "error": "..." } }
+# 内存任务存储
 tasks_db: Dict[str, dict] = {}
+task_queue: list[str] = []               # 排队顺序
+active_sources: dict[str, str] = {}      # "source::preset" → task_id (用于去重)
 
 # 加载 presets
 PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "presets.json")
@@ -66,6 +67,13 @@ class ProcessRequest(BaseModel):
     skip_download: bool = False # 是否跳过下载步骤 (仅当确信文件已在本地时使用)
     preset_name: str = "bilibili_summary" # 预设提示词名称
     custom_prompt: Optional[str] = None # 自定义 System Prompt
+
+def _cleanup_task(task_id: str, source: str, preset_name: str):
+    dedup_key = f"{source}::{preset_name}"
+    if dedup_key in active_sources and active_sources[dedup_key] == task_id:
+        del active_sources[dedup_key]
+    if task_id in task_queue:
+        task_queue.remove(task_id)
 
 def background_process_task(task_id: str, request: ProcessRequest, client_ip: str = ""):
     start = time.time()
@@ -111,6 +119,8 @@ def background_process_task(task_id: str, request: ProcessRequest, client_ip: st
             duration_s=elapsed,
             error=str(e)
         )
+    finally:
+        _cleanup_task(task_id, request.source, request.preset_name)
 
 @app.get("/presets", summary="获取可用的提示词预设")
 def get_presets():
@@ -119,13 +129,26 @@ def get_presets():
 
 @app.post("/process", summary="提交音频处理任务 (异步)")
 def process_audio(request: ProcessRequest, background_tasks: BackgroundTasks, req: Request):
-    task_id = str(uuid.uuid4())
     client_ip = req.client.host if req.client else "unknown"
+    dedup_key = f"{request.source}::{request.preset_name}"
+
+    # 去重：同一 source + preset 已有任务在处理中
+    if dedup_key in active_sources:
+        existing_id = active_sources[dedup_key]
+        existing = tasks_db.get(existing_id)
+        if existing and existing["status"] in ("queued", "processing"):
+            logger.info(f"Dedup hit: {dedup_key} → {existing_id}")
+            return {"task_id": existing_id, "message": "该视频已在处理中，无需重复提交"}
+
+    task_id = str(uuid.uuid4())
     tasks_db[task_id] = {
         "status": "queued",
         "result": None,
         "error": None
     }
+    active_sources[dedup_key] = task_id
+    task_queue.append(task_id)
+
     access_logger.log(
         type="submit",
         task_id=task_id,
@@ -142,7 +165,8 @@ def get_task_status(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     progress = Pipeline.task_progress.get(task_id, "")
-    return {**task, "progress": progress}
+    queue_pos = task_queue.index(task_id) + 1 if task_id in task_queue else 0
+    return {**task, "progress": progress, "queue_position": queue_pos}
 
 @app.get("/files/{filename}", summary="下载临时音频文件（供 ASR API 拉取）")
 async def serve_file(filename: str):
@@ -297,7 +321,13 @@ async function startTask() {
     const data = await r.json();
     if (!data.task_id) throw new Error('提交失败');
 
+    // 显示来自服务器的提示（去重等）
+    if (data.message && data.message !== 'Task queued') {
+      setStatus('💡 ' + data.message, 'info');
+    }
+
     let prevProgress = '';
+    let prevQueuePos = 0;
 
     const poll = setInterval(async () => {
       try {
@@ -307,6 +337,9 @@ async function startTask() {
         if (task.progress && task.progress !== prevProgress) {
           prevProgress = task.progress;
           setStatus('⏳ ' + task.progress, 'info');
+        } else if (task.queue_position && task.queue_position > 1 && task.queue_position !== prevQueuePos) {
+          prevQueuePos = task.queue_position;
+          setStatus('⏳ 前面还有 ' + (task.queue_position - 1) + ' 个任务排队中，请稍候...', 'info');
         }
 
         if (task.status === 'succeeded') {
