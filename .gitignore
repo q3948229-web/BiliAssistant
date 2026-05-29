@@ -10,6 +10,8 @@ __pycache__/
 output/
 downloads/
 public/
+logs/
+cache/
 .vscode/
 !.gitignore
 !requirements.txt
