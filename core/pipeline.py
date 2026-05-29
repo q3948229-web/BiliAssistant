@@ -56,7 +56,7 @@ class Pipeline:
                 serve_path = os.path.join(settings.PUBLIC_DIR, f"{file_id}.mp3")
 
                 ext = os.path.splitext(local_file)[1].lower()
-                if ext == ".mp3":
+                if ext in [".mp3", ".m4a", ".wav", ".flac", ".aac", ".ogg"]:
                     shutil.copy2(local_file, serve_path)
                 else:
                     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
