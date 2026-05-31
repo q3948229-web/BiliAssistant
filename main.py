@@ -125,7 +125,7 @@ def background_process_task(task_id: str, request: ProcessRequest, client_ip: st
 @app.get("/presets", summary="获取可用的提示词预设")
 def get_presets():
     presets = load_presets()
-    return [{"key": k, "label": v.get("label", k)} for k, v in presets.items()]
+    return [{"key": k, "label": v.get("label", k), "system": v.get("system", ""), "user_template": v.get("user_template", "")} for k, v in presets.items()]
 
 @app.post("/process", summary="提交音频处理任务 (异步)")
 def process_audio(request: ProcessRequest, background_tasks: BackgroundTasks, req: Request):
@@ -238,8 +238,8 @@ a:hover { text-decoration: underline; }
     </div>
 
     <div class="form-group">
-      <label>自定义提示词（可选）</label>
-      <textarea id="input-custom" placeholder="留空则使用上方选择的模式默认提示词" rows="2"></textarea>
+      <label>提示词内容（可编辑）</label>
+      <textarea id="input-custom" placeholder="选中预设后自动填充，可在此修改" rows="4"></textarea>
     </div>
 
     <button class="btn" id="btn-submit" onclick="startTask()">🚀 生成摘要</button>
@@ -267,16 +267,24 @@ a:hover { text-decoration: underline; }
 </div>
 
 <script>
+const _presetData = {};
+
 async function loadPresets() {
   try {
     const r = await fetch('/presets');
     const list = await r.json();
     const sel = document.getElementById('input-preset');
     list.forEach(p => {
+      _presetData[p.key] = p.system || '';
       const opt = document.createElement('option');
       opt.value = p.key; opt.textContent = p.label;
       sel.appendChild(opt);
     });
+    sel.onchange = () => {
+      const ta = document.getElementById('input-custom');
+      ta.value = _presetData[sel.value] || '';
+    };
+    sel.onchange();
   } catch { /* fallback handled below */ }
 }
 loadPresets();
