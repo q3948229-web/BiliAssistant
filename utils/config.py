@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "BiliAssistant_Service"
     
+    # Bilibili
+    BILIBILI_COOKIES: Optional[str] = None   # Netscape 格式 cookie，从浏览器导出后填入
+
     # DashScope (ASR - 语音识别)
     DASHSCOPE_API_KEY: str
     DASHSCOPE_MODEL: str = "qwen3-asr-flash-filetrans"
