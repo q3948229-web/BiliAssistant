@@ -4,4 +4,4 @@ oss2
 requests
 pydantic-settings
 imageio-ffmpeg
-yt-dlp
+yt-dlp>=2026.7.4
